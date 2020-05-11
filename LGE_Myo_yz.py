@@ -181,10 +181,9 @@ model.summary()
 
 
 #%% Train Model
-fname= "myo_yz2.hdf5"
-#earlystopper = EarlyStopping(patience=20, verbose=1)
-checkpointer = ModelCheckpoint(fname, verbose=1, save_best_only=True)
-results = model.fit(data_train, mask_train, validation_split=0.2, shuffle=True, batch_size=10, epochs=30, callbacks=[checkpointer])		
+results = model.fit(data_train, mask_train, validation_split=0.2, shuffle=True, batch_size=10, epochs=70)	
+
+
 #%%
 # summarize history for accuracy
 plt.plot(results.history['dice_coef'])
@@ -203,31 +202,14 @@ plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
 plt.show()
-#%% Save trained model and the network weights
-fname= "myo_yz1.hdf5"
+
+#%% Save trained model
+fname= "segment_myo_yz.hdf5"
 model.save(fname, overwrite = True)
-#model.save_weights("MYO_seg_unet3_weights.h5")
 
-#%%
-fname= "myo_yz2.hdf5"
-model = load_model(fname, custom_objects={'dice_coef': dice_coef,'dice_coef_loss': dice_coef_loss})
-#%%
-def Plot_Results(img_test,seg_clean,mask_clean):
-    
-    img_test = img_test.reshape( x_unet, y_unet)
-    img_test = img_test[:y, :z]    ####???
 
-    fig, axes = plt.subplots(1, 3, figsize=(8, 8))
-    ax = axes.flatten()
-    
-    ax[0].imshow(img_test.reshape(y,z), cmap="gray")
-    ax[0].set_axis_off()
-    ax[0].contour(seg_clean, [0.5], colors='r')
-    ax[0].contour(mask_clean, [0.5], colors='b')
-    #ax[0].set_title("Morphological ACWE segmentation", fontsize=12)
-    
-    ax[1].imshow(seg_clean, cmap="gray")
-    ax[2].imshow(mask_clean, cmap="gray")
+
+
 
 def model_evaluate(data,mask):
     dsc = []
@@ -250,13 +232,11 @@ def model_evaluate(data,mask):
         
         seg_clean = scipy.ndimage.morphology.binary_dilation(seg_clean, iterations=3)
         seg_clean = scipy.ndimage.morphology.binary_erosion(seg_clean)
-        #seg_clean = scipy.ndimage.morphology.binary_fill_holes(seg_clean) 
         seg_clean = seg_clean*1    
         seg_clean = seg_clean[:y, :z]
         
         mask_clean = scipy.ndimage.morphology.binary_dilation(mask_sample,  iterations=2)
         mask_clean = scipy.ndimage.morphology.binary_erosion(mask_clean)
-        #mask_clean = scipy.ndimage.morphology.binary_fill_holes(mask_clean) 
         mask_clean = mask_clean*1
         mask_clean = mask_clean[:y, :z]
         
@@ -265,8 +245,7 @@ def model_evaluate(data,mask):
         myo_m[k,:,:] = mask_clean
         myo_a[k,:,:] = seg_clean
         
-        #seg_clean = morphological_chan_vese(img_pred, 5, init_level_set=seg_clean, smoothing=2)
-        #Plot_Results(img_test,seg_clean,mask_clean)
+    
                 
         y_true = numpy.reshape(mask_clean, (y*z,1))
         y_pred = numpy.reshape(seg_clean, (y*z,1))
@@ -276,12 +255,14 @@ def model_evaluate(data,mask):
         prec = numpy.append(prec,precision_score(y_true, y_pred, average='macro'))
         rec = numpy.append(rec,recall_score(y_true, y_pred, average='macro'))
     
-    dsc = round(numpy.median(dsc)*100,2)
-    acc = round(numpy.median(acc)*100,2)
-    prec = round(numpy.median(prec)*100,2)
-    rec = round(numpy.median(rec)*100,2)
+    dsc = round(numpy.mean(dsc)*100,2)
+    acc = round(numpy.mean(acc)*100,2)
+    prec = round(numpy.mean(prec)*100,2)
+    rec = round(numpy.mean(rec)*100,2)
     return(dsc,acc,prec,rec)
-#%% Create test dataset including test images and their corresponding masks
+
+
+#%% Create test dataset and test 16 unseen images
 
 x_unet = 256
 y_unet = 256
@@ -313,11 +294,10 @@ for n in range(18,34):
         lge_slice = (lge_slice-lge_slice.min())/(lge_slice.max()-lge_slice.min())
         lge_norm[slice_no,:,:] = lge_slice
       
-    #lge = block_reduce(lge, block_size=(downsample_factor, downsample_factor,1), func=numpy.mean)  
     
     data_myo = nib.load(MYOs[n]);
     myo = data_myo.get_data()    
-#% 
+
     data = numpy.zeros((1,x_unet*y_unet))
     mask = numpy.zeros((1,x_unet*y_unet))
     
@@ -328,7 +308,7 @@ for n in range(18,34):
         lge_slice = lge_norm[page,:,:]
         myo_slice = myo[page,:,:]
         
-        #if (numpy.max(myo_slice) != 0):
+       
         lge_slice = numpy.pad(lge_slice, ((0, x_pad),(0, y_pad)), 'wrap')
         myo_slice = numpy.pad(myo_slice, ((0, x_pad),(0, y_pad)), 'wrap')
         
@@ -351,9 +331,9 @@ for n in range(18,34):
     precision = numpy.append(precision,p3)
     recall = numpy.append(recall,p4)
     slice_total += data.shape[0]
-#data_sample_visualization(data, 15, mask)
 
-#%      
+
+    
 print('Mean Values:')    
 print('DI is :', round(numpy.mean(dice_index),2) , '+', round(numpy.std(dice_index),2))
 print('Acc. is :', round(numpy.mean(accuracy),2), '+', round(numpy.std(accuracy),2))
@@ -365,12 +345,3 @@ print('DI is :', round(numpy.median(dice_index),2) , '+', round(numpy.std(dice_i
 print('Acc. is :', round(numpy.median(accuracy),2), '+', round(numpy.std(accuracy),2))
 print('Precision is :', round(numpy.median(precision),2), '+', round(numpy.std(precision),2))
 print('Recall is :', round(numpy.median(recall),2), '+', round(numpy.std(recall),2))
-#%%
-orig_3d = nib.Nifti1Image(img_orig, data_lge.affine, data_lge.header)
-nib.save(orig_3d, "lge_xz.nii.gz")
-
-gt = nib.Nifti1Image(myo_m, data_myo.affine, data_myo.header)
-nib.save(gt, "myo_m_xz.nii.gz")
-
-seg = nib.Nifti1Image(myo_a, data_myo.affine, data_myo.header)
-nib.save(seg, "myo_a_xz.nii.gz")
