@@ -1,55 +1,27 @@
-'''
-Created on Thu Oct 25 15:40:06 2018
-
-Author: Fatemeh Zabihollahy
-'''
-#%%
+#%% Import required libraries 
 import numpy
 from PIL import Image
-from numpy import *
-import math
-import sklearn
-from sklearn.utils import shuffle
-from sklearn.cross_validation import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
-from sklearn.mixture import GaussianMixture
 import scipy
-from scipy.ndimage.interpolation import zoom
-from skimage.measure import block_reduce
-import skimage
 from skimage import morphology
-from skimage.morphology import erosion
 from keras.models import Model, load_model
-from keras.layers import Input
-from keras.layers.core import Lambda
-from keras.layers.convolutional import Conv2D, Conv2DTranspose, UpSampling2D
-from keras.layers.core import Dense, Dropout, Activation, Flatten
-from keras.layers.pooling import MaxPooling2D
 from keras.layers.merge import concatenate
-from keras.callbacks import EarlyStopping, ModelCheckpoint
-#from keras import backend as K
-from keras.models import *
-from keras.layers import Input, merge, Conv2D, MaxPooling2D, UpSampling2D, Dropout, Cropping2D, ZeroPadding2D
+from keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D, Dropout
 from keras.layers.normalization import BatchNormalization
-from keras.optimizers import *
-from keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping
 import nibabel as nib
-import tensorflow
 import glob
 from matplotlib import pyplot as plt
 
-path1 = r'C:\Users\Fatemeh\Desktop\LGE Cardiac MRI\LGE Images nii'
+
+#%% Load 3D LGE CMRIs along with the myocardium masks
+
+path1 = r'Please enter the path where the LGE CMRIs in .nii format are located.'
 LGEs = glob.glob(path1 + "/*")
 
-path2 = r'C:\Users\Fatemeh\Desktop\LGE Cardiac MRI\Myocardial Masks nii'
+path2 = r'Please enter the path where the myocardium masks in .nii format are located.'
 MYOs = glob.glob(path2 + "/*")
 
-#path3 = r'C:\Users\Fatemeh\Desktop\LGE Cardiac MRI\Scar Masks nii'
-#SCARs = glob.glob(path3 + "/*")
-
-#%%
+#%% Prepare training samples
 
 x_unet = 256
 y_unet = 256
@@ -73,12 +45,12 @@ for n in range(18):
         lge_slice = (lge_slice-lge_slice.min())/(lge_slice.max()-lge_slice.min())
         lge_norm[slice_no,:,:] = lge_slice
       
-    #lge = block_reduce(lge, block_size=(downsample_factor, downsample_factor,1), func=numpy.mean)  
+   
     
     data_myo = nib.load(MYOs[n]);
     myo = data_myo.get_data()
     
-#%
+
     data = numpy.zeros((1,x_unet*y_unet))
     mask = numpy.zeros((1,x_unet*y_unet))
     
@@ -89,34 +61,18 @@ for n in range(18):
         lge_slice = lge_norm[page,:,:]
         myo_slice = myo[page,:,:]
         
-        #if (numpy.max(myo_slice) != 0):
+       
         lge_slice = numpy.pad(lge_slice, ((0, x_pad),(0, y_pad)), 'wrap')
         myo_slice = numpy.pad(myo_slice, ((0, x_pad),(0, y_pad)), 'wrap')
         
-        #LGE_slice = scipy.ndimage.filters.median_filter(LGE_slice,3)
-        '''
-        lge_flipud = numpy.flipud(lge_slice)
-        #lge_fliplr = numpy.fliplr(LGE_slice)
-        #lge_rot = numpy.rot90(LGE_slice)
-        myo_flipud = numpy.flipud(myo_slice)
-        #myo_fliplr = numpy.fliplr(myo_slice)
-        #myo_rot = numpy.rot90(myo_slice)
-        '''
+       
         lge_slice = lge_slice.reshape(1,(x_unet*y_unet))
         myo_slice = myo_slice.reshape(1, (x_unet*y_unet)) 
-        '''
-        lge_fud_reshape = lge_flipud.reshape(1,(x_unet*y_unet))
-        #lge_flr_reshape = lge_fliplr.reshape(1,(x_unet*y_unet))
-        #lge_rot_reshape = lge_rot.reshape(1,(x_unet*y_unet))
-        myo_fud_reshape = myo_flipud.reshape(1,(x_unet*y_unet))
-        #myo_flr_reshape = myo_fliplr.reshape(1,(x_unet*y_unet))
-        #myo_rot_reshape = myo_rot.reshape(1,(x_unet*y_unet))
-        '''
+        
         data = numpy.vstack((data, lge_slice))
         mask = numpy.vstack((mask,myo_slice))
       
-        #data = numpy.vstack((data,lge_slice ))
-        #mask = numpy.vstack((mask,myo_slice))
+       
 
     data = numpy.delete(data, (0), axis=0)     
     data_train = numpy.vstack((data_train, data))   
@@ -126,25 +82,13 @@ for n in range(18):
         
 data_train = numpy.delete(data_train, (0), axis=0) 
 mask_train = numpy.delete(mask_train, (0), axis=0) 
-# Duplicate training data
-#data_train = numpy.vstack((data_train, data_train))  
-#mask_train = numpy.vstack((mask_train, mask_train))
+
   
 #% reshape training dataset
 data_train = data_train.reshape(data_train.shape[0], x_unet, y_unet, 1)
 mask_train = mask_train.reshape(mask_train.shape[0], x_unet, y_unet, 1)
-#%%
-k = 1500
-lge_sample = data_train[k,:]
-lge_sample = lge_sample.reshape(x_unet, y_unet)
-lge_img = Image.fromarray(lge_sample*255)
-lge_img.show()
-print(numpy.max(lge_sample))
-mask_sample = mask_train[k,:]
-mask_sample = mask_sample.reshape(x_unet, y_unet)
-mask_img = Image.fromarray(mask_sample*255)
-mask_img.show()
-#%% U-net1 Architecture
+
+#%% U-Net Architecture
 smooth = 1.
 
 def dice_coef(y_true, y_pred):
@@ -161,27 +105,27 @@ def dice_coef_loss(y_true, y_pred):
 filter_no = 32
 
 inputs = Input((x_unet, y_unet, 1))
-#s = Lambda(lambda x: x / 255) (inputs)
+
 
 conv1 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(inputs)
 conv1 = BatchNormalization()(conv1)
 conv1 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv1)
 conv1 = BatchNormalization()(conv1)
-#conv1 = Dropout(0.5)(conv1)
+
 
 pool1 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2))(conv1)
 conv2 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(pool1)
 conv2 = BatchNormalization()(conv2)
 conv2 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv2)
 conv2 = BatchNormalization()(conv2)
-#conv2 = Dropout(0.5)(conv2)
+
 
 pool2 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2))(conv2)
 conv3 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(pool2)
 conv3 = BatchNormalization()(conv3)
 conv3 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv3)
 conv3 = BatchNormalization()(conv3)
-#conv3 = Dropout(0.5)(conv3)
+
 
 pool3 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2))(conv3)
 conv4 = Conv2D(filter_no*8, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(pool3)
@@ -195,116 +139,47 @@ conv5 = Conv2D(filter_no*16, 3,  strides=(1, 1), activation = 'relu', padding = 
 conv5 = BatchNormalization()(conv5)
 conv5 = Conv2D(filter_no*16, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv5)
 conv5 = BatchNormalization()(conv5)
-#conv5 = Dropout(0.5)(conv5)
+
 
 up1 = UpSampling2D(size = (2,2))(conv5)
-#conv4 = Cropping2D(cropping=((1, 0), (1, 0)))(conv4)
 merge1 = concatenate([conv4,up1], axis = 3)
 conv6 = Conv2D(filter_no*8, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(merge1)
 conv6 = BatchNormalization()(conv6)
 conv6 = Conv2D(filter_no*8, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv6)
 conv6 = BatchNormalization()(conv6)
-#conv6 = Dropout(0.5)(conv6)
+
 
 up2 = UpSampling2D(size = (2,2))(conv6)
-#conv3 = Cropping2D(cropping=((1, 1), (1, 1)))(conv3)
 merge2 = concatenate([conv3,up2], axis = 3)
 conv7 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(merge2)
 conv7 = BatchNormalization()(conv7)
 conv7 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv7)
 conv7 = BatchNormalization()(conv7)
-#conv7 = Dropout(0.5)(conv7)
+
 
 up3 = UpSampling2D(size = (2,2))(conv7)
-#conv2 = Cropping2D(cropping=((2, 2), (2, 2)))(conv2)
 merge3 = concatenate([conv2,up3], axis = 3)
 conv8 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(merge3)
 conv8 = BatchNormalization()(conv8)
 conv8 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv8)
 conv8 = BatchNormalization()(conv8)
-#conv8 = Dropout(0.5)(conv8)
+
 
 up4 = UpSampling2D(size = (2,2))(conv8)
-#up4 = ZeroPadding2D(padding=((4, 4), (4, 4)))(up4)
 merge4 = concatenate([conv1,up4], axis = 3)
 conv9 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(merge4)
 conv9 = BatchNormalization()(conv9)
 conv9 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv9)
 conv9 = BatchNormalization()(conv9)
-#conv9 = Dropout(0.5)(conv9)
 conv9 = Conv2D(2, 3, strides=(1, 1), activation = 'relu', padding = 'same')(conv9)
 conv9 = Conv2D(1, 1, activation = 'sigmoid')(conv9)
 
 model = Model(input = inputs, output = conv9)
 
-model.compile(optimizer='adadelta', loss=dice_coef_loss, metrics=[dice_coef])
-#model.compile(optimizer = 'adadelta', loss = 'binary_crossentropy', metrics = ['accuracy'])	
+model.compile(optimizer='adadelta', loss=dice_coef_loss, metrics=[dice_coef])	
 model.summary()
 
-#%% U-net2 Architecture
-'''
-filter_no = 16
-inputs = Input((x_unet, y_unet, 1))
 
-conv1 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(inputs)
-conv1 = BatchNormalization()(conv1)
-conv1 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv1)
-conv1 = BatchNormalization()(conv1)
-
-pool1 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2))(conv1)
-conv2 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(pool1)
-conv2 = BatchNormalization()(conv2)
-conv2 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv2)
-conv2 = BatchNormalization()(conv2)
-
-pool2 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2))(conv2)
-conv3 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(pool2)
-conv3 = BatchNormalization()(conv3)
-conv3 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv3)
-conv3 = ZeroPadding2D(padding=(1, 1))(conv3)
-conv3 = BatchNormalization()(conv3)
-conv3 = Dropout(0.5)(conv3)
-
-pool3 = MaxPooling2D(pool_size=(2, 2), strides=(2, 2))(conv3)
-conv4 = Conv2D(filter_no*8, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(pool3)
-conv4 = BatchNormalization()(conv4)
-conv4 = Conv2D(filter_no*8, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv4)
-conv4 = BatchNormalization()(conv4)
-conv4 = Dropout(0.5)(conv4)
-
-up1 = UpSampling2D(size = (2,2))(conv4)
-merge1 = concatenate([conv3,up1], axis = 3)
-conv5 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(merge1)
-conv5 = BatchNormalization()(conv5)
-conv5 = Conv2D(filter_no*4, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv5)
-conv5 = BatchNormalization()(conv5)
-
-up2 = UpSampling2D(size = (2,2))(conv5)
-up2 = Cropping2D(cropping=((2, 2), (2, 2)))(up2)
-merge2 = concatenate([conv2,up2], axis = 3)
-conv6 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(merge2)
-conv6 = BatchNormalization()(conv6)
-conv6 = Conv2D(filter_no*2, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv6)
-conv6 = BatchNormalization()(conv6)
-
-up3 = UpSampling2D(size = (2,2))(conv6)
-merge3 = concatenate([conv1,up3], axis = 3)
-conv7 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(merge3)
-conv7 = BatchNormalization()(conv7)
-conv7 = Conv2D(filter_no, 3,  strides=(1, 1), activation = 'relu', padding = 'same')(conv7)
-conv7= BatchNormalization()(conv7)
-conv7 = Conv2D(2, 3, strides=(1, 1), activation = 'relu', padding = 'same')(conv7)
-conv7 = Conv2D(1, 1, activation = 'sigmoid')(conv7)
-
-model = Model(input = inputs, output = conv7)
-
-#sgd = optimizers.SGD(lr=0.01, momentum=0.0, decay=0.0, nesterov=False)
-#model.compile(loss='mean_squared_error', optimizer=sgd, metrics = ['accuracy'])
-
-#model.compile(optimizer = 'adadelta', loss = 'binary_crossentropy', metrics = ['accuracy'])	
-model.compile(optimizer='adadelta', loss=dice_coef_loss, metrics=[dice_coef])
-model.summary()
-'''
 #%% Train Model
 fname= "myo_yz2.hdf5"
 #earlystopper = EarlyStopping(patience=20, verbose=1)
